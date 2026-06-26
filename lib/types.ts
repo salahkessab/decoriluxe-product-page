@@ -12,6 +12,7 @@ export type CatalogFormInput = {
 
 export type GenerationStyle =
   | "white-background"
+  | "white-background-alt-angle"
   | "lifestyle-room"
   | "premium-catalog"
   | "material-close-up";

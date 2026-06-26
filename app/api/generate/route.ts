@@ -28,6 +28,7 @@ function parseFeatures(rawValue: FormDataEntryValue | null) {
 
 const generationStyles = new Set<GenerationStyle>([
   "white-background",
+  "white-background-alt-angle",
   "lifestyle-room",
   "premium-catalog",
   "material-close-up",

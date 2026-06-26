@@ -105,6 +105,16 @@ function getStyleInstructions(
       "Use soft luxury studio lighting, a subtle grounded shadow, clean edges, and realistic material rendering.",
       "Do not create a collage, room scene, decorative props, panel layout, text, logos, or labels.",
     ],
+    "white-background-alt-angle": [
+      "Style: White background alternate angle.",
+      "Create a clean e-commerce product photo on a pure white background. Show the same product from an alternate angle, such as a slight 3/4 front perspective or elegant side-front view. Preserve the exact product identity and keep the full product fully visible from top to bottom with comfortable margins. Do not crop the object and do not redesign it.",
+      "Only change the presentation angle or camera perspective. Preserve exact shape, proportions, materials, color, structure, handles, drawers, legs, visible hardware, rounded edges, and silhouette.",
+      "If the alternate angle cannot be safely inferred from the uploaded image, create only a subtle perspective variation while preserving the exact product. Do not invent a dramatically different side view, back view, hidden detail, or unsupported structure.",
+      "Keep pure white background, centered composition, comfortable margins on all sides, soft e-commerce studio lighting, clean edges, and a subtle grounded shadow.",
+      "Use full-product e-commerce framing, not a close-up, macro crop, collage, lifestyle scene, text layout, or catalog board.",
+      "If the product is tall or vertical, such as a lamp, vase, mirror, shelf, or floor lamp, automatically zoom out enough so the full object fits naturally inside the 4:5 canvas.",
+      "Do not add props, text, labels, logos, watermarks, badges, fake branding, or dimensions.",
+    ],
     "lifestyle-room": [
       "Style: Lifestyle room scene.",
       sceneRouting,

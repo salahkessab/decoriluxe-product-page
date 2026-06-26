@@ -14,6 +14,7 @@ import { getOpenAIClient } from "@/lib/openai/client";
 import {
   CatalogFormInput,
   GenerationResult,
+  GenerationStyle,
   LockedIdentitySummary,
 } from "@/lib/types";
 
@@ -123,6 +124,12 @@ function parseCropValidation(output: string) {
     cropped: parsed.cropped === true,
     reason: typeof parsed.reason === "string" ? parsed.reason : "",
   };
+}
+
+function requiresWhiteBackgroundFramingValidation(style: GenerationStyle) {
+  return (
+    style === "white-background" || style === "white-background-alt-angle"
+  );
 }
 
 async function analyzeProductImageAndBuildPrompt(
@@ -334,7 +341,7 @@ async function generateWithFramingRetry(
     formInput,
   );
 
-  if (formInput.style !== "white-background") {
+  if (!requiresWhiteBackgroundFramingValidation(formInput.style)) {
     return generated;
   }
 
@@ -359,7 +366,7 @@ async function generateWithFramingRetry(
     [
       prompt,
       "Retry: show the complete product fully visible with extra safe margins. Do not crop any part of the item.",
-      "For White background product photo, full product visibility is mandatory and more important than dramatic composition.",
+      "For white background product styles, full product visibility is mandatory and more important than dramatic composition.",
     ].join("\n"),
     formInput,
   );

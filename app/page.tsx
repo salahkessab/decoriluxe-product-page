@@ -12,6 +12,7 @@ import {
 
 type GenerationStyle =
   | "white-background"
+  | "white-background-alt-angle"
   | "lifestyle-room"
   | "premium-catalog"
   | "material-close-up";
@@ -71,6 +72,11 @@ const styleOptions: StyleOption[] = [
     id: "white-background",
     title: "White background product photo",
     description: "Clean marketplace-ready product image.",
+  },
+  {
+    id: "white-background-alt-angle",
+    title: "White background alternate angle",
+    description: "Subtle 3/4 product view on pure white.",
   },
   {
     id: "lifestyle-room",
