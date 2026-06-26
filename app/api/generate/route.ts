@@ -4,7 +4,7 @@ import { generateCatalogComposition } from "@/lib/fal/catalog-service";
 import { GenerationStyle } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 function parseFeatures(rawValue: FormDataEntryValue | null) {
   if (typeof rawValue !== "string" || !rawValue) {

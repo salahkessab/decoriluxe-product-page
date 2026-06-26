@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
+import { put } from "@vercel/blob";
 import sharp from "sharp";
 import { GenerationStyle } from "@/lib/types";
 
@@ -16,6 +17,29 @@ function buildGeneratedFileName(style: GenerationStyle) {
   return `decoriluxe-catalog-${style}-${timestamp}.webp`;
 }
 
+async function saveWebPToLocalPublic(fileName: string, webpBuffer: Buffer) {
+  const outputDirectory = path.join(process.cwd(), "public", "generated");
+  const outputPath = path.join(outputDirectory, fileName);
+
+  await mkdir(outputDirectory, { recursive: true });
+  await writeFile(outputPath, webpBuffer);
+
+  return `/generated/${fileName}`;
+}
+
+async function saveWebPForDownload(fileName: string, webpBuffer: Buffer) {
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const blob = await put(`generated/${fileName}`, webpBuffer, {
+      access: "public",
+      contentType: "image/webp",
+    });
+
+    return blob.url;
+  }
+
+  return saveWebPToLocalPublic(fileName, webpBuffer);
+}
+
 export async function convertGeneratedImageToWebP(
   imageUrl: string,
   style: GenerationStyle,
@@ -27,25 +51,23 @@ export async function convertGeneratedImageToWebP(
   }
 
   const imageBuffer = Buffer.from(await response.arrayBuffer());
-  const outputDirectory = path.join(process.cwd(), "public", "generated");
   const fileName = buildGeneratedFileName(style);
-  const outputPath = path.join(outputDirectory, fileName);
-
-  await mkdir(outputDirectory, { recursive: true });
 
   const webpBuffer = await sharp(imageBuffer)
     .resize(outputWidth, outputHeight, {
       background: "#ffffff",
-      fit: style === "white-background" ? "contain" : "cover",
+      // Keep the full provider image visible. "cover" fills 4:5 but crops
+      // catalog text/details when the provider returns a different ratio.
+      fit: "contain",
       position: "center",
     })
     .webp({ quality: webpQuality })
     .toBuffer();
 
-  await writeFile(outputPath, webpBuffer);
+  const exportedImageUrl = await saveWebPForDownload(fileName, webpBuffer);
 
   return {
-    imageUrl: `/generated/${fileName}`,
+    imageUrl: exportedImageUrl,
     fileName,
   };
 }

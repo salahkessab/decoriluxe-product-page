@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type GenerationStyle =
   | "white-background"
@@ -49,6 +56,13 @@ type StyleOption = {
   description: string;
 };
 
+type ZoomPreview = {
+  imageUrl: string;
+  title: string;
+  x: number;
+  y: number;
+};
+
 const featureInputCount = 5;
 const initialFeatures = Array.from({ length: featureInputCount }, () => "");
 
@@ -83,6 +97,9 @@ function getStyleTitle(style: GenerationStyle) {
 }
 
 export default function Home() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const workspaceVersionRef = useRef(0);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [productName, setProductName] = useState("");
   const [material, setMaterial] = useState("");
@@ -104,10 +121,16 @@ export default function Home() {
   const [copyError, setCopyError] = useState("");
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
+  const [zoomPreview, setZoomPreview] = useState<ZoomPreview | null>(null);
 
   const isGenerating = generatingStyles.length > 0;
   const hasResults = Object.keys(results).length > 0;
   const displayedResultStyles = batchStyles;
+  const generatedStyleCount = Object.keys(results).length;
+  const failedStyleCount = Object.keys(styleErrors).length;
+  const requestedStyleCount = batchStyles.length;
+  const finishedStyleCount = generatedStyleCount + failedStyleCount;
+  const activeStyleNames = generatingStyles.map(getStyleTitle).join(", ");
 
   const uploadPreviewUrl = useMemo(() => {
     if (!imageFile) {
@@ -125,6 +148,21 @@ export default function Home() {
     };
   }, [uploadPreviewUrl]);
 
+  useEffect(() => {
+    if (!isGenerating || batchStyles.length === 0) {
+      return;
+    }
+
+    const scrollTimer = window.setTimeout(() => {
+      resultsSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 120);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [batchStyles.length, isGenerating]);
+
   function updateFeature(index: number, value: string) {
     setFeatures((current) =>
       current.map((feature, currentIndex) =>
@@ -133,17 +171,32 @@ export default function Home() {
     );
   }
 
-  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextFile = event.target.files?.[0] ?? null;
+  function resetProductWorkspace(nextFile: File | null = null) {
+    workspaceVersionRef.current += 1;
     setImageFile(nextFile);
     setBatchStyles([]);
     setResults({});
     setStyleErrors({});
     setSelectedStyles([]);
+    setGeneratingStyles([]);
+    setDownloadingStyle(null);
     setCopyResult(null);
     setCopyError("");
     setCopyMessage("");
+    setIsGeneratingCopy(false);
     setError("");
+  }
+
+  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
+    resetProductWorkspace(event.target.files?.[0] ?? null);
+  }
+
+  function removeUploadedImage() {
+    resetProductWorkspace(null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   }
 
   function toggleStyle(style: GenerationStyle) {
@@ -185,7 +238,10 @@ export default function Home() {
     return formData;
   }
 
-  async function generateOneStyle(style: GenerationStyle) {
+  async function generateOneStyle(
+    style: GenerationStyle,
+    workspaceVersion: number,
+  ) {
     const response = await fetch("/api/generate", {
       method: "POST",
       body: createGenerationFormData(style),
@@ -199,6 +255,10 @@ export default function Home() {
       const failureMessage =
         "error" in payload ? payload.error : "Generation failed.";
       throw new Error(failureMessage ?? "Generation failed.");
+    }
+
+    if (workspaceVersion !== workspaceVersionRef.current) {
+      return;
     }
 
     setResults((current) => ({
@@ -224,6 +284,7 @@ export default function Home() {
     const nextBatchStyles = [...selectedStyles];
     const queue = [...nextBatchStyles];
     const concurrency = 2;
+    const workspaceVersion = workspaceVersionRef.current;
     setBatchStyles(nextBatchStyles);
     setResults({});
     setStyleErrors({});
@@ -238,8 +299,12 @@ export default function Home() {
         }
 
         try {
-          await generateOneStyle(style);
+          await generateOneStyle(style, workspaceVersion);
         } catch (submissionError) {
+          if (workspaceVersion !== workspaceVersionRef.current) {
+            return;
+          }
+
           const message =
             submissionError instanceof Error
               ? submissionError.message
@@ -250,9 +315,11 @@ export default function Home() {
             [style]: message,
           }));
         } finally {
-          setGeneratingStyles((current) =>
-            current.filter((item) => item !== style),
-          );
+          if (workspaceVersion === workspaceVersionRef.current) {
+            setGeneratingStyles((current) =>
+              current.filter((item) => item !== style),
+            );
+          }
         }
       }
     }
@@ -268,6 +335,22 @@ export default function Home() {
     void generateSelectedStyles();
   }
 
+  function updateZoomPreview(
+    event: MouseEvent<HTMLDivElement>,
+    result: GenerationResponse,
+  ) {
+    setZoomPreview({
+      imageUrl: result.imageUrl,
+      title: getStyleTitle(result.style),
+      x: Math.max(16, Math.min(event.clientX + 24, window.innerWidth - 500)),
+      y: Math.max(16, Math.min(event.clientY + 24, window.innerHeight - 640)),
+    });
+  }
+
+  function clearZoomPreview() {
+    setZoomPreview(null);
+  }
+
   async function generateProductCopy() {
     setCopyError("");
     setCopyMessage("");
@@ -278,6 +361,7 @@ export default function Home() {
     }
 
     setIsGeneratingCopy(true);
+    const workspaceVersion = workspaceVersionRef.current;
 
     try {
       const response = await fetch("/api/copy-generator", {
@@ -295,15 +379,25 @@ export default function Home() {
         throw new Error(failureMessage ?? "Product copy generation failed.");
       }
 
+      if (workspaceVersion !== workspaceVersionRef.current) {
+        return;
+      }
+
       setCopyResult(payload);
     } catch (generationError) {
+      if (workspaceVersion !== workspaceVersionRef.current) {
+        return;
+      }
+
       const message =
         generationError instanceof Error
           ? generationError.message
           : "Product copy generation failed.";
       setCopyError(message);
     } finally {
-      setIsGeneratingCopy(false);
+      if (workspaceVersion === workspaceVersionRef.current) {
+        setIsGeneratingCopy(false);
+      }
     }
   }
 
@@ -368,7 +462,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_15%_4%,rgba(201,122,61,0.22),transparent_26rem),radial-gradient(circle_at_84%_14%,rgba(111,143,104,0.16),transparent_24rem),linear-gradient(180deg,#1e1915_0%,#120f0d_44%,#0c0908_100%)] text-[var(--foreground)]">
       <div className="mx-auto w-full max-w-[1240px] px-4 py-7 sm:px-6 lg:px-8">
         <header className="mb-6">
           <h1 className="font-serif text-4xl leading-tight text-[var(--foreground)] sm:text-5xl">
@@ -386,7 +480,7 @@ export default function Home() {
               : "mx-auto max-w-[680px]"
           }
         >
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(78,55,35,0.07)]">
+          <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.32)]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-[var(--foreground)]">
                 Uploaded Product
@@ -398,11 +492,12 @@ export default function Home() {
               ) : null}
             </div>
 
-            <label className="block cursor-pointer overflow-hidden rounded-2xl border border-dashed border-[#d8cabc] bg-[var(--card-soft)] transition hover:border-[var(--accent)]">
+            <label className="block cursor-pointer overflow-hidden rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card-soft)] transition hover:border-[var(--accent)]">
               <input
                 accept="image/png,image/jpeg,image/webp"
                 className="sr-only"
                 onChange={onFileChange}
+                ref={fileInputRef}
                 type="file"
               />
 
@@ -414,17 +509,31 @@ export default function Home() {
                 }
               >
                 {uploadPreviewUrl ? (
-                  <Image
-                    alt="Uploaded product preview"
-                    className="max-h-[430px] w-auto object-contain"
-                    height={900}
-                    src={uploadPreviewUrl}
-                    unoptimized
-                    width={900}
-                  />
+                  <div className="relative flex w-full items-center justify-center">
+                    <button
+                      aria-label="Remove uploaded image"
+                      className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[#120f0d]/85 text-lg font-semibold leading-none text-white shadow-[0_8px_20px_rgba(0,0,0,0.35)] transition hover:border-[var(--accent)] hover:bg-[var(--accent)]"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        removeUploadedImage();
+                      }}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                    <Image
+                      alt="Uploaded product preview"
+                      className="max-h-[430px] w-auto object-contain"
+                      height={900}
+                      src={uploadPreviewUrl}
+                      unoptimized
+                      width={900}
+                    />
+                  </div>
                 ) : (
                   <div className="text-center">
-                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent)] text-lg text-[#fffcf7] shadow-[0_10px_24px_rgba(185,138,90,0.22)]">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent)] text-lg text-white shadow-[0_10px_24px_rgba(201,122,61,0.28)]">
                       +
                     </div>
                     <p className="text-sm font-medium text-[var(--foreground)]">
@@ -439,7 +548,7 @@ export default function Home() {
             </label>
 
             {error ? (
-              <p className="mt-3 rounded-xl border border-[#e8b8a8] bg-[#fff4ef] px-3 py-2 text-sm text-[#9a4432]">
+              <p className="mt-3 rounded-xl border border-[#7f3d2c] bg-[#2a1511] px-3 py-2 text-sm text-[#f0b09b]">
                 {error}
               </p>
             ) : null}
@@ -447,7 +556,7 @@ export default function Home() {
 
           {imageFile ? (
             <div className="space-y-4">
-              <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(78,55,35,0.07)] sm:p-5">
+              <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.32)] sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-sm font-semibold text-[var(--foreground)]">
@@ -469,8 +578,8 @@ export default function Home() {
                       <div
                         className={`rounded-2xl border p-4 text-left transition ${
                           isSelected
-                            ? "border-[var(--accent)] bg-[var(--selected)] shadow-[0_12px_28px_rgba(185,138,90,0.14)]"
-                            : "border-[var(--border)] bg-[var(--card-soft)] hover:border-[var(--accent)] hover:bg-[#f5ecdf]"
+                            ? "border-[var(--accent)] bg-[var(--selected)] shadow-[0_14px_34px_rgba(201,122,61,0.24)]"
+                            : "border-[var(--border)] bg-[var(--card-soft)] hover:border-[var(--accent)] hover:bg-[#221b16]"
                         }`}
                         role="button"
                         tabIndex={0}
@@ -484,26 +593,38 @@ export default function Home() {
                         }}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <h3 className="min-h-[40px] text-sm font-semibold leading-5 text-[var(--foreground)]">
+                          <h3
+                            className={`min-h-[40px] text-sm font-semibold leading-5 ${
+                              isSelected
+                                ? "text-[var(--selected-text)]"
+                                : "text-[var(--foreground)]"
+                            }`}
+                          >
                             {option.title}
                           </h3>
                           <span
                             className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${
                               isSelected
                                 ? "border-[var(--accent)] bg-[var(--accent)]"
-                                : "border-[#d8cabc] bg-[var(--card)]"
+                                : "border-[var(--border)] bg-[var(--card)]"
                             }`}
                           />
                         </div>
-                        <p className="mt-1 min-h-[40px] text-xs leading-5 text-[var(--text-muted)]">
+                        <p
+                          className={`mt-1 min-h-[40px] text-xs leading-5 ${
+                            isSelected
+                              ? "text-[#5c4b3c]"
+                              : "text-[var(--text-muted)]"
+                          }`}
+                        >
                           {option.description}
                         </p>
                         {isActive ? (
-                          <p className="mt-3 rounded-xl bg-[#e6d9ca] px-3 py-2 text-center text-sm font-semibold text-[var(--text-secondary)]">
+                          <p className="mt-3 rounded-xl bg-[#2a211a] px-3 py-2 text-center text-sm font-semibold text-[var(--text-secondary)]">
                             Generating...
                           </p>
                         ) : styleError ? (
-                          <p className="mt-3 rounded-xl border border-[#e8b8a8] bg-[#fff4ef] px-3 py-2 text-xs leading-5 text-[#9a4432]">
+                          <p className="mt-3 rounded-xl border border-[#7f3d2c] bg-[#2a1511] px-3 py-2 text-xs leading-5 text-[#f0b09b]">
                             Failed
                           </p>
                         ) : null}
@@ -513,7 +634,7 @@ export default function Home() {
                 </div>
 
                 <button
-                  className="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--button)] px-4 py-3.5 text-sm font-semibold text-[#fffcf7] shadow-[0_12px_28px_rgba(58,48,42,0.16)] transition hover:bg-[var(--button-hover)] disabled:cursor-not-allowed disabled:bg-[#c7baae] disabled:shadow-none"
+                  className="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--button)] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(201,122,61,0.22)] transition hover:bg-[var(--button-hover)] disabled:cursor-not-allowed disabled:bg-[#5b4a3a] disabled:shadow-none"
                   disabled={isGenerating || selectedStyles.length === 0}
                   onClick={onGenerateSelectedClick}
                   type="button"
@@ -524,9 +645,45 @@ export default function Home() {
                       }...`
                     : `Generate Selected Styles (${selectedStyles.length})`}
                 </button>
+
+                {requestedStyleCount > 0 ? (
+                  <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[#211914] px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-white">
+                        {isGenerating
+                          ? `Generating images: ${finishedStyleCount}/${requestedStyleCount} finished`
+                          : `Generation finished: ${finishedStyleCount}/${requestedStyleCount}`}
+                      </p>
+                      {isGenerating ? (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-[var(--accent)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--accent)]" />
+                          Working
+                        </span>
+                      ) : null}
+                    </div>
+                    {isGenerating && activeStyleNames ? (
+                      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+                        Now generating: {activeStyleNames}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#120f0d]">
+                      <div
+                        className="h-full rounded-full bg-[var(--accent)] transition-all duration-500"
+                        style={{
+                          width: `${Math.max(
+                            8,
+                            Math.round(
+                              (finishedStyleCount / requestedStyleCount) * 100,
+                            ),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
-              <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(78,55,35,0.07)] sm:p-5">
+              <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.32)] sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="text-sm font-semibold text-[var(--foreground)]">
@@ -538,7 +695,7 @@ export default function Home() {
                     </p>
                   </div>
                   <button
-                    className="inline-flex items-center justify-center rounded-2xl border border-[var(--accent)] bg-[#fff7ee] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--button)] hover:text-[#fffcf7] disabled:cursor-not-allowed disabled:border-[#d8cabc] disabled:text-[#b7aaa0]"
+                    className="inline-flex items-center justify-center rounded-2xl border border-[var(--accent)] bg-[var(--secondary-background)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--button)] hover:text-white disabled:cursor-not-allowed disabled:border-[var(--border)] disabled:text-[#75685b]"
                     disabled={isGeneratingCopy}
                     onClick={onGenerateCopyClick}
                     type="button"
@@ -565,7 +722,7 @@ export default function Home() {
                         Material
                       </span>
                       <input
-                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                         onChange={(event) => setMaterial(event.target.value)}
                         placeholder="Only if confirmed"
                         value={material}
@@ -577,7 +734,7 @@ export default function Home() {
                         Color
                       </span>
                       <input
-                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                         onChange={(event) =>
                           setProductColor(event.target.value)
                         }
@@ -591,7 +748,7 @@ export default function Home() {
                         Dimensions
                       </span>
                       <input
-                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                         onChange={(event) => setDimensions(event.target.value)}
                         placeholder="Only if real"
                         value={dimensions}
@@ -603,7 +760,7 @@ export default function Home() {
                         Delivery info
                       </span>
                       <input
-                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                         onChange={(event) =>
                           setDeliveryInfo(event.target.value)
                         }
@@ -620,7 +777,7 @@ export default function Home() {
                         {features.map((feature, index) => (
                           <input
                             key={`copy-feature-${index}`}
-                            className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                            className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                             onChange={(event) =>
                               updateFeature(index, event.target.value)
                             }
@@ -636,7 +793,7 @@ export default function Home() {
                         Existing Product Description
                       </span>
                       <textarea
-                        className="min-h-32 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm leading-6 text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                        className="min-h-32 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm leading-6 text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                         onChange={(event) =>
                           setExistingDescription(event.target.value)
                         }
@@ -648,7 +805,7 @@ export default function Home() {
                 </details>
 
                 {copyError ? (
-                  <p className="mt-3 rounded-xl border border-[#e8b8a8] bg-[#fff4ef] px-3 py-2 text-sm text-[#9a4432]">
+                  <p className="mt-3 rounded-xl border border-[#7f3d2c] bg-[#2a1511] px-3 py-2 text-sm text-[#f0b09b]">
                     {copyError}
                   </p>
                 ) : null}
@@ -693,7 +850,7 @@ export default function Home() {
 
                     <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-4">
                       <button
-                        className="inline-flex items-center justify-center rounded-2xl bg-[var(--button)] px-4 py-2.5 text-sm font-semibold text-[#fffcf7] shadow-[0_10px_24px_rgba(58,48,42,0.14)] transition hover:bg-[var(--button-hover)]"
+                        className="inline-flex items-center justify-center rounded-2xl bg-[var(--button)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(201,122,61,0.2)] transition hover:bg-[var(--button-hover)]"
                         onClick={copyProductCopyToClipboard}
                         type="button"
                       >
@@ -713,7 +870,7 @@ export default function Home() {
                 ) : null}
               </div>
 
-              <details className="rounded-2xl border border-[var(--border)] bg-[rgba(255,252,247,0.82)]">
+              <details className="rounded-2xl border border-[var(--border)] bg-[rgba(30,25,21,0.74)]">
                 <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-[var(--foreground)] marker:hidden">
                   <span className="flex items-center justify-between gap-3">
                     <span>Advanced Options</span>
@@ -727,7 +884,7 @@ export default function Home() {
                       Product name
                     </span>
                     <input
-                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                       onChange={(event) => setProductName(event.target.value)}
                       placeholder="Optional"
                       value={productName}
@@ -739,7 +896,7 @@ export default function Home() {
                       Language
                     </span>
                     <select
-                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)]"
+                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[rgba(201,122,61,0.18)]"
                       onChange={(event) => setLanguage(event.target.value)}
                       value={language}
                     >
@@ -754,7 +911,10 @@ export default function Home() {
         </section>
 
         {isGenerating || hasResults ? (
-          <section className="mt-6 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(78,55,35,0.07)] sm:p-5">
+          <section
+            className="mt-6 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.32)] sm:p-5"
+            ref={resultsSectionRef}
+          >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-[var(--foreground)]">
@@ -782,17 +942,35 @@ export default function Home() {
                         {getStyleTitle(style)}
                       </h3>
                       {isActive ? (
-                        <span className="text-xs text-[var(--text-muted)]">
+                        <span className="rounded-full border border-[var(--accent)] px-2.5 py-1 text-xs text-[var(--text-secondary)]">
                           Generating
+                        </span>
+                      ) : result ? (
+                        <span className="rounded-full border border-[var(--accent-secondary)] px-2.5 py-1 text-xs text-[var(--text-secondary)]">
+                          Ready
+                        </span>
+                      ) : styleError ? (
+                        <span className="rounded-full border border-[#7f3d2c] px-2.5 py-1 text-xs text-[#f0b09b]">
+                          Failed
                         </span>
                       ) : null}
                     </div>
 
-                    <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[#fffaf3] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.45)]">
+                    <div
+                      className={`overflow-hidden rounded-2xl border border-[var(--border)] bg-[#100c0a] shadow-[inset_0_0_0_1px_rgba(247,239,229,0.08)] ${
+                        result ? "cursor-zoom-in" : ""
+                      }`}
+                      onMouseLeave={clearZoomPreview}
+                      onMouseMove={(event) => {
+                        if (result) {
+                          updateZoomPreview(event, result);
+                        }
+                      }}
+                    >
                       {isActive ? (
                         <div className="flex aspect-[4/5] items-center justify-center px-6 text-center">
                           <div>
-                            <div className="mx-auto h-9 w-9 animate-spin rounded-full border-2 border-[#d8cabc] border-t-[var(--button)]" />
+                            <div className="mx-auto h-9 w-9 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--button)]" />
                             <p className="mt-3 text-sm font-medium text-[var(--foreground)]">
                               Generating...
                             </p>
@@ -808,15 +986,17 @@ export default function Home() {
                           width={1080}
                         />
                       ) : styleError ? (
-                        <div className="flex aspect-[4/5] items-center justify-center px-6 text-center text-sm text-red-700">
-                          {styleError}
+                        <div className="flex aspect-[4/5] items-center justify-center px-6 text-center">
+                          <p className="rounded-2xl border border-[#7f3d2c] bg-[#2a1511] px-4 py-3 text-sm leading-6 text-[#f0b09b]">
+                            {styleError}
+                          </p>
                         </div>
                       ) : null}
                     </div>
 
                     {result ? (
                       <button
-                        className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-[var(--accent)] bg-[#fff7ee] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--button)] hover:text-[#fffcf7] disabled:cursor-not-allowed disabled:border-[#d8cabc] disabled:text-[#b7aaa0]"
+                        className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-[var(--accent)] bg-[var(--secondary-background)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--button)] hover:text-white disabled:cursor-not-allowed disabled:border-[var(--border)] disabled:text-[#75685b]"
                         disabled={downloadingStyle === style}
                         onClick={() => downloadResult(result)}
                         type="button"
@@ -833,6 +1013,34 @@ export default function Home() {
           </section>
         ) : null}
       </div>
+      {zoomPreview ? (
+        <div
+          className="pointer-events-none fixed z-50 hidden w-[470px] overflow-hidden rounded-3xl border border-[var(--accent)] bg-[#100c0a] shadow-[0_24px_70px_rgba(0,0,0,0.55)] lg:block"
+          style={{
+            left: zoomPreview.x,
+            top: zoomPreview.y,
+          }}
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-2.5">
+            <p className="truncate text-xs font-semibold text-white">
+              Zoom preview
+            </p>
+            <p className="truncate text-xs text-[var(--text-muted)]">
+              {zoomPreview.title}
+            </p>
+          </div>
+          <div className="aspect-[4/5] bg-white">
+            <Image
+              alt={`${zoomPreview.title} zoom preview`}
+              className="h-full w-full object-contain"
+              height={1350}
+              src={zoomPreview.imageUrl}
+              unoptimized
+              width={1080}
+            />
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
