@@ -98,6 +98,8 @@ function getStyleInstructions(
     "white-background": [
       "Style: White background product photo.",
       "Create a clean e-commerce product photo on a pure white background. Show the entire product fully visible from top to bottom with comfortable margins on all sides. Do not crop the object. Preserve the full silhouette and keep the product centered in the frame.",
+      "Use the primary marketplace angle: a clean straight-on front view or the clearest front-facing view supported by the uploaded image.",
+      "Do not rotate the product into a new angle for this style. This should be the main standard product photo.",
       "Use full-product e-commerce framing, not a detail crop, close-up crop, macro crop, or dramatic tight composition.",
       "Center the product vertically and horizontally. Leave comfortable white space above, below, left, and right of the full object.",
       "If the product is tall or vertical, such as a lamp, vase, mirror, shelf, or floor lamp, automatically zoom out enough so the full object fits naturally inside the 4:5 canvas.",
@@ -108,8 +110,11 @@ function getStyleInstructions(
     "white-background-alt-angle": [
       "Style: White background alternate angle.",
       "Create a clean e-commerce product photo on a pure white background. Show the same product from an alternate angle, such as a slight 3/4 front perspective or elegant side-front view. Preserve the exact product identity and keep the full product fully visible from top to bottom with comfortable margins. Do not crop the object and do not redesign it.",
+      "Make the camera perspective visibly different from the standard white background product photo. Do not repeat the same straight-on composition.",
+      "Prefer a safe 20 to 30 degree front-side rotation, slight left-front or right-front perspective, or a slightly higher 3/4 top-front camera angle when appropriate.",
+      "For round or symmetrical products where side rotation looks similar, create a subtle but visible camera-height or perspective variation, such as a slightly higher top-front view showing more surface depth while keeping the exact product structure.",
       "Only change the presentation angle or camera perspective. Preserve exact shape, proportions, materials, color, structure, handles, drawers, legs, visible hardware, rounded edges, and silhouette.",
-      "If the alternate angle cannot be safely inferred from the uploaded image, create only a subtle perspective variation while preserving the exact product. Do not invent a dramatically different side view, back view, hidden detail, or unsupported structure.",
+      "If the alternate angle cannot be safely inferred from the uploaded image, create only a subtle perspective variation while preserving the exact product. Do not invent a dramatically different side view, back view, hidden detail, underside, rear surface, or unsupported structure.",
       "Keep pure white background, centered composition, comfortable margins on all sides, soft e-commerce studio lighting, clean edges, and a subtle grounded shadow.",
       "Use full-product e-commerce framing, not a close-up, macro crop, collage, lifestyle scene, text layout, or catalog board.",
       "If the product is tall or vertical, such as a lamp, vase, mirror, shelf, or floor lamp, automatically zoom out enough so the full object fits naturally inside the 4:5 canvas.",
