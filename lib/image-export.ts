@@ -27,14 +27,30 @@ async function saveWebPToLocalPublic(fileName: string, webpBuffer: Buffer) {
   return `/generated/${fileName}`;
 }
 
+function buildWebPDataUrl(webpBuffer: Buffer) {
+  return `data:image/webp;base64,${webpBuffer.toString("base64")}`;
+}
+
 async function saveWebPForDownload(fileName: string, webpBuffer: Buffer) {
   if (process.env.BLOB_READ_WRITE_TOKEN) {
-    const blob = await put(`generated/${fileName}`, webpBuffer, {
-      access: "public",
-      contentType: "image/webp",
-    });
+    try {
+      const blob = await put(`generated/${fileName}`, webpBuffer, {
+        access: "public",
+        contentType: "image/webp",
+      });
 
-    return blob.url;
+      return blob.url;
+    } catch (error) {
+      if (!process.env.VERCEL) {
+        throw error;
+      }
+
+      return buildWebPDataUrl(webpBuffer);
+    }
+  }
+
+  if (process.env.VERCEL) {
+    return buildWebPDataUrl(webpBuffer);
   }
 
   return saveWebPToLocalPublic(fileName, webpBuffer);
