@@ -631,7 +631,7 @@ export default function Home() {
                           </p>
                         ) : styleError ? (
                           <p className="mt-3 rounded-xl border border-[#7f3d2c] bg-[#2a1511] px-3 py-2 text-xs leading-5 text-[#f0b09b]">
-                            Failed
+                            {styleError}
                           </p>
                         ) : null}
                       </div>

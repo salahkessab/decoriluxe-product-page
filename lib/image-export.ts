@@ -7,6 +7,7 @@ import { GenerationStyle } from "@/lib/types";
 const outputWidth = 1080;
 const outputHeight = 1350;
 const webpQuality = 90;
+const maxInlineWebPBytes = 2_750_000;
 
 function buildGeneratedFileName(style: GenerationStyle) {
   const timestamp = new Date()
@@ -27,20 +28,36 @@ async function saveWebPToLocalPublic(fileName: string, webpBuffer: Buffer) {
   return `/generated/${fileName}`;
 }
 
-async function saveWebPForDownload(fileName: string, webpBuffer: Buffer) {
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    const blob = await put(`generated/${fileName}`, webpBuffer, {
-      access: "public",
-      contentType: "image/webp",
-    });
+function buildWebPDataUrl(webpBuffer: Buffer) {
+  return `data:image/webp;base64,${webpBuffer.toString("base64")}`;
+}
 
-    return blob.url;
+async function saveWebPForDownload(
+  fileName: string,
+  webpBuffer: Buffer,
+  providerImageUrl: string,
+) {
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const blob = await put(`generated/${fileName}`, webpBuffer, {
+        access: "public",
+        contentType: "image/webp",
+      });
+
+      return blob.url;
+    } catch (error) {
+      if (!process.env.VERCEL) {
+        throw error;
+      }
+    }
   }
 
   if (process.env.VERCEL) {
-    throw new Error(
-      "Missing BLOB_READ_WRITE_TOKEN. Connect Vercel Blob Storage and add the Blob token in Environment Variables before generating images.",
-    );
+    if (webpBuffer.byteLength <= maxInlineWebPBytes) {
+      return buildWebPDataUrl(webpBuffer);
+    }
+
+    return providerImageUrl;
   }
 
   return saveWebPToLocalPublic(fileName, webpBuffer);
@@ -70,7 +87,11 @@ export async function convertGeneratedImageToWebP(
     .webp({ quality: webpQuality })
     .toBuffer();
 
-  const exportedImageUrl = await saveWebPForDownload(fileName, webpBuffer);
+  const exportedImageUrl = await saveWebPForDownload(
+    fileName,
+    webpBuffer,
+    imageUrl,
+  );
 
   return {
     imageUrl: exportedImageUrl,
