@@ -392,48 +392,38 @@ export async function generateCatalogComposition(
   const analysis = await analyzeUploadedProductImage(sourceImage, formInput);
   const prompt = buildCatalogGenerationPrompt(analysis, formInput);
   const generationSettings = getGenerationSettings(formInput.style);
+  let generated: Awaited<ReturnType<typeof generateWithFramingRetry>>;
 
   try {
-    const generated = await generateWithFramingRetry(
+    generated = await generateWithFramingRetry(
       appConfig.imageModel,
       sourceImageUrl,
       prompt,
       formInput,
     );
-    const exported = await convertGeneratedImageToWebP(
-      generated.imageUrl,
-      formInput.style,
-    );
-
-    return {
-      ...generated,
-      imageUrl: exported.imageUrl,
-      analysis,
-      style: formInput.style,
-      ...generationSettings,
-    };
   } catch (primaryError) {
     if (!appConfig.fallbackImageModel) {
       throw primaryError;
     }
 
-    const fallbackGenerated = await generateWithFramingRetry(
+    generated = await generateWithFramingRetry(
       appConfig.fallbackImageModel,
       sourceImageUrl,
       prompt,
       formInput,
     );
-    const exported = await convertGeneratedImageToWebP(
-      fallbackGenerated.imageUrl,
-      formInput.style,
-    );
-
-    return {
-      ...fallbackGenerated,
-      imageUrl: exported.imageUrl,
-      analysis,
-      style: formInput.style,
-      ...generationSettings,
-    };
   }
+
+  const exported = await convertGeneratedImageToWebP(
+    generated.imageUrl,
+    formInput.style,
+  );
+
+  return {
+    ...generated,
+    imageUrl: exported.imageUrl,
+    analysis,
+    style: formInput.style,
+    ...generationSettings,
+  };
 }

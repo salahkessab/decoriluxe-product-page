@@ -27,30 +27,20 @@ async function saveWebPToLocalPublic(fileName: string, webpBuffer: Buffer) {
   return `/generated/${fileName}`;
 }
 
-function buildWebPDataUrl(webpBuffer: Buffer) {
-  return `data:image/webp;base64,${webpBuffer.toString("base64")}`;
-}
-
 async function saveWebPForDownload(fileName: string, webpBuffer: Buffer) {
   if (process.env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      const blob = await put(`generated/${fileName}`, webpBuffer, {
-        access: "public",
-        contentType: "image/webp",
-      });
+    const blob = await put(`generated/${fileName}`, webpBuffer, {
+      access: "public",
+      contentType: "image/webp",
+    });
 
-      return blob.url;
-    } catch (error) {
-      if (!process.env.VERCEL) {
-        throw error;
-      }
-
-      return buildWebPDataUrl(webpBuffer);
-    }
+    return blob.url;
   }
 
   if (process.env.VERCEL) {
-    return buildWebPDataUrl(webpBuffer);
+    throw new Error(
+      "Missing BLOB_READ_WRITE_TOKEN. Connect Vercel Blob Storage and add the Blob token in Environment Variables before generating images.",
+    );
   }
 
   return saveWebPToLocalPublic(fileName, webpBuffer);
