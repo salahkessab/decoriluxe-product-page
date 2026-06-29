@@ -3,6 +3,7 @@
 import Image from "next/image";
 import {
   ChangeEvent,
+  DragEvent,
   MouseEvent,
   useEffect,
   useMemo,
@@ -66,6 +67,7 @@ type ZoomPreview = {
 
 const featureInputCount = 5;
 const initialFeatures = Array.from({ length: featureInputCount }, () => "");
+const supportedUploadTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const styleOptions: StyleOption[] = [
   {
@@ -128,6 +130,7 @@ export default function Home() {
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
   const [zoomPreview, setZoomPreview] = useState<ZoomPreview | null>(null);
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
 
   const isGenerating = generatingStyles.length > 0;
   const hasResults = Object.keys(results).length > 0;
@@ -193,8 +196,47 @@ export default function Home() {
     setError("");
   }
 
+  function setUploadedImage(nextFile: File | null) {
+    if (nextFile && !supportedUploadTypes.has(nextFile.type)) {
+      setError("Please upload a PNG, JPG, or WEBP image.");
+      return;
+    }
+
+    resetProductWorkspace(nextFile);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    resetProductWorkspace(event.target.files?.[0] ?? null);
+    setUploadedImage(event.target.files?.[0] ?? null);
+  }
+
+  function onUploadDragOver(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDraggingUpload(true);
+  }
+
+  function onUploadDragLeave(event: DragEvent<HTMLLabelElement>) {
+    const nextTarget = event.relatedTarget;
+
+    if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+      setIsDraggingUpload(false);
+    }
+  }
+
+  function onUploadDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setIsDraggingUpload(false);
+
+    const droppedFile = event.dataTransfer.files?.[0] ?? null;
+    if (!droppedFile) {
+      return;
+    }
+
+    setUploadedImage(droppedFile);
   }
 
   function removeUploadedImage() {
@@ -498,7 +540,16 @@ export default function Home() {
               ) : null}
             </div>
 
-            <label className="block cursor-pointer overflow-hidden rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card-soft)] transition hover:border-[var(--accent)]">
+            <label
+              className={`block cursor-pointer overflow-hidden rounded-2xl border border-dashed bg-[var(--card-soft)] transition ${
+                isDraggingUpload
+                  ? "border-[var(--accent)] bg-[#241a13] shadow-[0_0_0_2px_rgba(201,122,61,0.18)]"
+                  : "border-[var(--border)] hover:border-[var(--accent)]"
+              }`}
+              onDragLeave={onUploadDragLeave}
+              onDragOver={onUploadDragOver}
+              onDrop={onUploadDrop}
+            >
               <input
                 accept="image/png,image/jpeg,image/webp"
                 className="sr-only"
@@ -543,10 +594,12 @@ export default function Home() {
                       +
                     </div>
                     <p className="text-sm font-medium text-[var(--foreground)]">
-                      Upload product image
+                      {isDraggingUpload
+                        ? "Drop product image here"
+                        : "Upload product image"}
                     </p>
                     <p className="mt-1 text-xs text-[var(--text-muted)]">
-                      PNG, JPG, or WEBP
+                      Drag and drop, or click to choose PNG, JPG, or WEBP
                     </p>
                   </div>
                 )}
